@@ -1,0 +1,45 @@
+{
+  "name": "pggate",
+  "version": "0.1.0",
+  "description": "EXPLAIN every Supabase query at 100,000 synthetic rows before you ship, and prove each fix: Postgres 18 (PGlite) in-process, nothing sent anywhere",
+  "keywords": [
+    "supabase",
+    "postgres",
+    "explain",
+    "rls",
+    "index",
+    "pglite"
+  ],
+  "homepage": "https://pggate.dev",
+  "bugs": {
+    "email": "hello@pggate.dev"
+  },
+  "license": "SEE LICENSE IN LICENSING.md",
+  "author": {
+    "name": "Yilin Guo",
+    "email": "hello@pggate.dev",
+    "url": "https://pggate.dev"
+  },
+  "type": "module",
+  "bin": {
+    "pggate": "dist/bin.js"
+  },
+  "files": [
+    "dist",
+    "scripts",
+    "LICENSE",
+    "LICENSE-COMMERCIAL",
+    "LICENSING.md",
+    "THIRD_PARTY_NOTICES",
+    "README.md"
+  ],
+  "scripts": {
+    "postinstall": "node scripts/fetch-splinter.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
