@@ -1,0 +1,67 @@
+# pggate Commercial License
+
+Copyright 2026 Guo Yilin
+
+This license covers the parts of pggate that LICENSING.md lists as commercial
+(the "Commercial Code"). The rest of pggate is licensed under the Functional
+Source License, Version 1.1, MIT Future License (FSL-1.1-MIT, in LICENSE). This
+license is not FSL-1.1-MIT, and the Commercial Code does not become available
+under the MIT license after two years.
+
+## Definitions
+
+"We" means Guo Yilin, the licensor of pggate. "You" means the person or legal
+entity that uses pggate.
+
+"pggate" means the software we publish under that name in each version,
+including the npm package `pggate`, the pggate GitHub Action and pggate.dev.
+
+"Commercial Features" means the features of pggate that need a Rescue or Guard
+license key:
+
+- Rescue: the DDL of every proven fix after the first one in a report, and the
+  migration file that holds them (`pggate rescue --out`, and unlocking them on
+  pggate.dev);
+- Guard: everything in Rescue, plus real-statistics mode (`--dsn`, `--stats`),
+  the diff gate (`--base`) and `pggate hook`.
+
+"License Key" means a key for pggate that you bought from us (sold through
+Lemon Squeezy), that covers the Commercial Feature you use, and that has not
+expired or been disabled.
+
+## License Grant
+
+1. You may install, run and copy pggate, including the Commercial Code, and use
+   every feature of pggate that does not need a License Key. When the
+   Commercial Code runs without a License Key it only reports that a License
+   Key is needed; that use is allowed.
+2. While you hold a License Key, you may use the Commercial Features it covers,
+   under the terms you accepted when you bought it (https://pggate.dev/terms).
+3. You may read the Commercial Code, and change it to test the change and to
+   send it to us. Changed Commercial Code may not be used for anything else.
+
+## Restrictions
+
+You may not:
+
+1. use a Commercial Feature without a License Key that covers it;
+2. move, change, disable or circumvent the license key functionality of
+   pggate, or remove or hide functionality that a License Key protects;
+3. distribute the Commercial Code, on its own or as part of other software,
+   except as an unchanged copy of a pggate release as we published it,
+   together with this license and LICENSING.md;
+4. use the Commercial Code in a product or service that competes with pggate.
+
+## Termination
+
+If you break these terms, your rights under this license end.
+
+## Disclaimer
+
+THE COMMERCIAL CODE IS PROVIDED "AS IS" AND WITHOUT WARRANTIES OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING WITHOUT LIMITATION WARRANTIES OF FITNESS FOR A
+PARTICULAR PURPOSE, MERCHANTABILITY, TITLE OR NON-INFRINGEMENT.
+
+IN NO EVENT WILL WE HAVE ANY LIABILITY TO YOU ARISING OUT OF OR RELATED TO THE
+COMMERCIAL CODE, INCLUDING INDIRECT, SPECIAL, INCIDENTAL OR CONSEQUENTIAL
+DAMAGES, EVEN IF WE HAVE BEEN INFORMED OF THEIR POSSIBILITY IN ADVANCE.

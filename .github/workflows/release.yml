@@ -1,0 +1,109 @@
+# Release: build dist/ from a tagged pggate commit in CI only. Two independent builds must be byte-identical, and identical to the
+# npm package of the same version; the files get a build provenance attestation; then they are committed here and tagged.
+name: release
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: the pggate version to release, e.g. 0.1.0 (builds tag v0.1.0 of yilinguo121/pggate)
+        required: true
+permissions:
+  contents: read
+concurrency:
+  group: release
+  cancel-in-progress: false
+jobs:
+  build:
+    name: build ${{ matrix.run }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        run: [a, b]
+    env:
+      VERSION: ${{ inputs.version }}
+    steps:
+      - name: check the version
+        run: '[[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "not a version: $VERSION"; exit 1; }'
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: yilinguo121/pggate
+          ref: v${{ inputs.version }}
+          # read-only token for the pggate repository while it is private
+          token: ${{ secrets.PGGATE_SOURCE_TOKEN }}
+          path: pggate
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: build the package
+        working-directory: pggate
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile
+          node packages/cli/scripts/build-package.mjs --out ../out/package
+          test "$(node -p 'require("../out/package/package.json").version')" = "$VERSION"
+          node scripts/audit-secrets.mjs --no-corpus --dir ../out/package
+          (cd ../out/package && find . -type f -print0 | sort -z | xargs -0 sha256sum) > ../out/SHA256SUMS
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: build-${{ matrix.run }}
+          path: out
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    env:
+      VERSION: ${{ inputs.version }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: build-a
+          path: a
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: build-b
+          path: b
+      - name: the two builds are byte-identical
+        run: diff a/SHA256SUMS b/SHA256SUMS && diff -r a/package b/package
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: the npm package pggate@VERSION has the same files
+        run: |
+          mkdir npm && cd npm
+          npm pack "pggate@$VERSION" > /dev/null
+          tar -xzf "pggate-$VERSION.tgz"
+          (cd package && find . -type f -print0 | sort -z | xargs -0 sha256sum) > SHA256SUMS
+          diff SHA256SUMS ../a/SHA256SUMS
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: action
+      - name: put the build in place
+        run: |
+          cd action
+          rm -rf dist scripts
+          cp -r ../a/package/dist ../a/package/scripts ../a/package/package.json ../a/package/THIRD_PARTY_NOTICES ../a/package/LICENSE ../a/package/LICENSE-COMMERCIAL .
+          # pggate's own LICENSING.md (which source files are under which license) travels with the bundle
+          cp ../a/package/LICENSING.md dist/LICENSING.md
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            action/dist/*
+            action/scripts/fetch-splinter.mjs
+            action/package.json
+      - name: commit, tag v${{ inputs.version }}, move the major tag
+        run: |
+          cd action
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add dist scripts package.json THIRD_PARTY_NOTICES LICENSE LICENSE-COMMERCIAL
+          git commit -m "release v$VERSION: dist/ built from yilinguo121/pggate v$VERSION"
+          git tag "v$VERSION"
+          git tag -f "v${VERSION%%.*}"
+          git push origin HEAD:main "v$VERSION"
+          git push -f origin "v${VERSION%%.*}"

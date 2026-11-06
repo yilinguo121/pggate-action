@@ -1,0 +1,132 @@
+name: pggate
+description: Run pggate check at 100k rows on every pull request and leave one comment with the EXPLAIN-backed findings and the fixes proven in the same run
+author: pggate.dev
+branding:
+  icon: database
+  color: blue
+inputs:
+  profile:
+    description: scale (100,000 rows per main table, the default) or small (1,000)
+    required: false
+    default: scale
+  working-directory:
+    description: the project root, where supabase/migrations is
+    required: false
+    default: ${{ github.workspace }}
+  snapshot:
+    description: a schema snapshot or schema dump to build the schema from (pggate snapshot JSON, a Supabase SQL Editor export, or the output of supabase db dump / pg_dump --schema-only), relative to working-directory
+    required: false
+    default: ''
+  base:
+    description: the base branch for the diff gate (the pull request's base branch is github.base_ref); only findings the pull request adds then fail the job. Needs a Guard key in license-key. Empty (the default) runs no diff
+    required: false
+    default: ''
+  license-key:
+    description: your pggate license key (Guard for base, Rescue for every fix's DDL); pass a secret
+    required: false
+    default: ''
+  comment:
+    description: leave one comment on the pull request and update it on every push (true), or only print the report (false)
+    required: false
+    default: 'true'
+  github-token:
+    description: the token used for the comment
+    required: false
+    default: ${{ github.token }}
+  structural:
+    description: also run splinter, Supabase's linter, in the sandbox (true); false passes --no-structural and skips downloading splinter.sql
+    required: false
+    default: 'true'
+  data-budget:
+    description: the most synthetic data to load, in MB, or none; empty uses the CLI's default
+    required: false
+    default: ''
+  explain-timeout:
+    description: the limit for one EXPLAIN, in seconds; empty uses the CLI's default (30)
+    required: false
+    default: ''
+outputs:
+  exit-code:
+    description: pggate's exit code (0 nothing found · 1 a fail finding · 2 something could not be analysed or needs a license key)
+    value: ${{ steps.check.outputs.exit }}
+  report:
+    description: the path of the Markdown report
+    value: ${{ steps.check.outputs.report }}
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      with:
+        node-version: 22
+    # splinter has no license upstream, so it is not in this repository: download it from a pinned commit and check its sha256
+    - name: download splinter.sql
+      if: inputs.structural != 'false'
+      shell: bash
+      run: node "$GITHUB_ACTION_PATH/scripts/fetch-splinter.mjs"
+    - name: pggate check
+      id: check
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      # inputs go through the environment, never into the script text
+      env:
+        PGGATE_LICENSE_KEY: ${{ inputs.license-key }}
+        PGGATE_IN_PROFILE: ${{ inputs.profile }}
+        PGGATE_IN_BASE: ${{ inputs.base }}
+        PGGATE_IN_SNAPSHOT: ${{ inputs.snapshot }}
+        PGGATE_IN_STRUCTURAL: ${{ inputs.structural }}
+        PGGATE_IN_DATA_BUDGET: ${{ inputs.data-budget }}
+        PGGATE_IN_EXPLAIN_TIMEOUT: ${{ inputs.explain-timeout }}
+      run: |
+        set +e
+        report="$RUNNER_TEMP/pggate-report.md"
+        args=(check --profile "$PGGATE_IN_PROFILE" --format md)
+        if [ -n "$PGGATE_IN_BASE" ]; then
+          # a shallow checkout has no base branch: fetch that one ref
+          git fetch --no-tags --depth=1 origin "+refs/heads/$PGGATE_IN_BASE:refs/remotes/origin/$PGGATE_IN_BASE" >/dev/null 2>&1
+          args+=(--base "origin/$PGGATE_IN_BASE")
+        fi
+        if [ -n "$PGGATE_IN_SNAPSHOT" ]; then args+=(--snapshot "$PGGATE_IN_SNAPSHOT"); fi
+        if [ "$PGGATE_IN_STRUCTURAL" = "false" ]; then args+=(--no-structural); fi
+        if [ -n "$PGGATE_IN_DATA_BUDGET" ]; then args+=(--data-budget "$PGGATE_IN_DATA_BUDGET"); fi
+        if [ -n "$PGGATE_IN_EXPLAIN_TIMEOUT" ]; then args+=(--explain-timeout "$PGGATE_IN_EXPLAIN_TIMEOUT"); fi
+        node "$GITHUB_ACTION_PATH/dist/bin.js" "${args[@]}" > "$report"
+        code=$?
+        echo "exit=$code" >> "$GITHUB_OUTPUT"
+        echo "report=$report" >> "$GITHUB_OUTPUT"
+        cat "$report" >> "$GITHUB_STEP_SUMMARY"
+        cat "$report"
+        exit 0
+    - name: comment on the pull request (create once, then update in place)
+      if: inputs.comment == 'true' && github.event_name == 'pull_request'
+      uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+      env:
+        PGGATE_REPORT: ${{ steps.check.outputs.report }}
+        PGGATE_EXIT: ${{ steps.check.outputs.exit }}
+        PGGATE_PROFILE: ${{ inputs.profile }}
+      with:
+        github-token: ${{ inputs.github-token }}
+        script: |
+          const fs = require('fs');
+          const marker = '<!-- pggate-report -->';
+          const body = `${marker}\n${fs.readFileSync(process.env.PGGATE_REPORT, 'utf8')}\n\n<sub>pggate · exit ${process.env.PGGATE_EXIT} · ${process.env.PGGATE_PROFILE} profile · commit ${context.sha.slice(0, 7)}</sub>`;
+          const { owner, repo } = context.repo;
+          const issue_number = context.payload.pull_request.number;
+          try {
+            const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number, per_page: 100 });
+            const mine = comments.find((c) => c.body && c.body.startsWith(marker));
+            if (mine) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: mine.id, body });
+              core.info(`updated comment ${mine.html_url}`);
+            } else {
+              const created = await github.rest.issues.createComment({ owner, repo, issue_number, body });
+              core.info(`created comment ${created.data.html_url}`);
+            }
+          } catch (err) {
+            // a pull request from a fork gets a read-only token: the report is still in the job summary
+            core.warning(`could not comment on the pull request (${err.status ?? ''} ${err.message}); the report is in the job summary`);
+          }
+    - name: exit with pggate's code
+      shell: bash
+      env:
+        PGGATE_EXIT: ${{ steps.check.outputs.exit }}
+      run: exit "$PGGATE_EXIT"
